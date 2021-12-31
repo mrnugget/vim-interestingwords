@@ -3,7 +3,7 @@
 " .vimrc config https://www.youtube.com/watch?v=xZuy4gBghho
 " --------------------------------------------------------------------
 
-let s:interestingWordsGUIColors = ['#aeee00', '#ff0000', '#0000ff', '#b88823', '#ffa724', '#ff2c4b']
+let s:interestingWordsGUIColors = ['#F93442', '#FF8C00', '#FFE101', '#AAE21F', '#61CAA0', '#7259CB']
 let s:interestingWordsTermColors = ['154', '121', '211', '137', '214', '222']
 
 let g:interestingWordsGUIColors = exists('g:interestingWordsGUIColors') ? g:interestingWordsGUIColors : s:interestingWordsGUIColors
@@ -16,36 +16,21 @@ let s:interestingModes = []
 let s:mids = {}
 let s:recentlyUsed = []
 
-function! ColorWord(word, mode)
+function! ColorWordIndex(word, mode, n)
   if !(s:hasBuiltColors)
     call s:buildColors()
   endif
 
-  " gets the lowest unused index
-  let n = index(s:interestingWords, 0)
-  if (n == -1)
-    if !(exists('g:interestingWordsCycleColors') && g:interestingWordsCycleColors)
-      echom "InterestingWords: max number of highlight groups reached " . len(s:interestingWords)
-      return
-    else
-      let n = s:recentlyUsed[0]
-      call UncolorWord(s:interestingWords[n])
-    endif
-  endif
-
-  let mid = 595129 + n
-  let s:interestingWords[n] = a:word
-  let s:interestingModes[n] = a:mode
+  let mid = 595129 + a:n
+  let s:interestingWords[a:n] = a:word
+  let s:interestingModes[a:n] = a:mode
   let s:mids[a:word] = mid
 
-  call s:apply_color_to_word(n, a:word, a:mode, mid)
-
-  call s:markRecentlyUsed(n)
-
+  call s:apply_color_to_word(a:n, a:word, a:mode, mid)
 endfunction
 
 function! s:apply_color_to_word(n, word, mode, mid)
-  let case = s:checkIgnoreCase(a:word) ? '\c' : '\C'
+  let case = '\C'
   if a:mode == 'v'
     let pat = case . '\V\zs' . escape(a:word, '\') . '\ze'
   else
@@ -56,24 +41,6 @@ function! s:apply_color_to_word(n, word, mode, mid)
     call matchadd("InterestingWord" . (a:n + 1), pat, 1, a:mid)
   catch /E801/      " match id already taken.
   endtry
-endfunction
-
-function! s:nearest_group_at_cursor() abort
-  let l:matches = {}
-  for l:match_item in getmatches()
-    let l:mids = filter(items(s:mids), 'v:val[1] == l:match_item.id')
-    if len(l:mids) == 0
-      continue
-    endif
-    let l:word = l:mids[0][0]
-    let l:position = match(getline('.'), l:match_item.pattern)
-    if l:position > -1
-      if col('.') > l:position && col('.') <= l:position + len(l:word)
-        return l:word
-      endif
-    endif
-  endfor
-  return ''
 endfunction
 
 function! UncolorWord(word)
@@ -92,41 +59,7 @@ function! s:getmatch(mid) abort
   return filter(getmatches(), 'v:val.id==a:mid')[0]
 endfunction
 
-function! WordNavigation(direction)
-  let currentWord = s:nearest_group_at_cursor()
-
-  if (s:checkIgnoreCase(currentWord))
-    let currentWord = tolower(currentWord)
-  endif
-
-  if (index(s:interestingWords, currentWord) > -1)
-    let l:index = index(s:interestingWords, currentWord)
-    let l:mode = s:interestingModes[index]
-    let case = s:checkIgnoreCase(currentWord) ? '\c' : '\C'
-    if l:mode == 'v'
-      let pat = case . '\V\zs' . escape(currentWord, '\') . '\ze'
-    else
-      let pat = case . '\V\<' . escape(currentWord, '\') . '\>'
-    endif
-    let searchFlag = ''
-    if !(a:direction)
-      let searchFlag = 'b'
-    endif
-    call search(pat, searchFlag)
-  else
-    try
-      if (a:direction)
-        normal! n
-      else
-        normal! N
-      endif
-    catch /E486/
-      echohl WarningMsg | echomsg "E486: Pattern not found: " . @/
-    endtry
-  endif
-endfunction
-
-function! InterestingWords(mode) range
+function! InterestingWordsIndex(mode, n) range
   if a:mode == 'v'
     let currentWord = s:get_visual_selection()
   else
@@ -135,11 +68,8 @@ function! InterestingWords(mode) range
   if !(len(currentWord))
     return
   endif
-  if (s:checkIgnoreCase(currentWord))
-    let currentWord = tolower(currentWord)
-  endif
   if (index(s:interestingWords, currentWord) == -1)
-    call ColorWord(currentWord, a:mode)
+    call ColorWordIndex(currentWord, a:mode, a:n)
   else
     call UncolorWord(currentWord)
   endif
@@ -164,36 +94,6 @@ function! UncolorAllWords()
   endfor
 endfunction
 
-function! RecolorAllWords()
-  let i = 0
-  for word in s:interestingWords
-    if (type(word) == 1)
-      let mode = s:interestingModes[i]
-      let mid = s:mids[word]
-      call s:apply_color_to_word(i, word, mode, mid)
-    endif
-    let i += 1
-  endfor
-endfunction
-
-" returns true if the ignorecase flag needs to be used
-function! s:checkIgnoreCase(word)
-  " return false if case sensitive is used
-  if (exists('g:interestingWordsCaseSensitive'))
-    return !g:interestingWordsCaseSensitive
-  endif
-  " checks ignorecase
-  " and then if smartcase is on, check if the word contains an uppercase char
-  return &ignorecase && (!&smartcase || (match(a:word, '\u') == -1))
-endfunction
-
-" moves the index to the back of the s:recentlyUsed list
-function! s:markRecentlyUsed(n)
-  let index = index(s:recentlyUsed, a:n)
-  call remove(s:recentlyUsed, index)
-  call add(s:recentlyUsed, a:n)
-endfunction
-
 function! s:uiMode()
   " Stolen from airline's airline#init#gui_mode()
   return ((has('nvim') && exists('$NVIM_TUI_ENABLE_TRUE_COLOR') && !exists("+termguicolors"))
@@ -210,17 +110,6 @@ function! s:buildColors()
   endif
   let ui = s:uiMode()
   let wordColors = (ui == 'gui') ? g:interestingWordsGUIColors : g:interestingWordsTermColors
-  if (exists('g:interestingWordsRandomiseColors') && g:interestingWordsRandomiseColors)
-    " fisher-yates shuffle
-    let i = len(wordColors)-1
-    while i > 0
-      let j = s:Random(i)
-      let temp = wordColors[i]
-      let wordColors[i] = wordColors[j]
-      let wordColors[j] = temp
-      let i -= 1
-    endwhile
-  endif
   " select ui type
   " highlight group indexed from 1
   let currentIndex = 1
@@ -228,43 +117,21 @@ function! s:buildColors()
     execute 'hi! def InterestingWord' . currentIndex . ' ' . ui . 'bg=' . wordColor . ' ' . ui . 'fg=Black'
     call add(s:interestingWords, 0)
     call add(s:interestingModes, 'n')
-    call add(s:recentlyUsed, currentIndex-1)
     let currentIndex += 1
   endfor
   let s:hasBuiltColors = 1
 endfunc
-
-" helper function to get random number between 0 and n-1 inclusive
-function! s:Random(n)
-  let timestamp = reltimestr(reltime())[-2:]
-  return float2nr(floor(a:n * timestamp/100))
-endfunction
 
 if !exists('g:interestingWordsDefaultMappings') || g:interestingWordsDefaultMappings != 0
     let g:interestingWordsDefaultMappings = 1
 endif
 
 if g:interestingWordsDefaultMappings && !hasmapto('<Plug>InterestingWords')
-    nnoremap <silent> <leader>k :call InterestingWords('n')<cr>
-    vnoremap <silent> <leader>k :call InterestingWords('v')<cr>
+    vnoremap <silent> <leader>1 :call InterestingWordsIndex('v', 0)<cr>
+    vnoremap <silent> <leader>2 :call InterestingWordsIndex('v', 1)<cr>
+    vnoremap <silent> <leader>3 :call InterestingWordsIndex('v', 2)<cr>
+    vnoremap <silent> <leader>4 :call InterestingWordsIndex('v', 3)<cr>
+    vnoremap <silent> <leader>5 :call InterestingWordsIndex('v', 4)<cr>
+    vnoremap <silent> <leader>6 :call InterestingWordsIndex('v', 5)<cr>
     nnoremap <silent> <leader>K :call UncolorAllWords()<cr>
-
-    nnoremap <silent> n :call WordNavigation(1)<cr>
-    nnoremap <silent> N :call WordNavigation(0)<cr>
-endif
-
-if g:interestingWordsDefaultMappings
-   try
-      nnoremap <silent> <unique> <script> <Plug>InterestingWords
-               \ :call InterestingWords('n')<cr>
-      vnoremap <silent> <unique> <script> <Plug>InterestingWords
-               \ :call InterestingWords('v')<cr>
-      nnoremap <silent> <unique> <script> <Plug>InterestingWordsClear
-               \ :call UncolorAllWords()<cr>
-      nnoremap <silent> <unique> <script> <Plug>InterestingWordsForeward
-               \ :call WordNavigation(1)<cr>
-      nnoremap <silent> <unique> <script> <Plug>InterestingWordsBackward
-               \ :call WordNavigation(0)<cr>
-   catch /E227/
-   endtry
 endif
